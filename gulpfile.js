@@ -4,10 +4,32 @@
  * The gulp wrapper around patternlab-node core, providing tasks to interact with the core library and move supporting frontend assets.
 ******************************************************/
 var gulp = require('gulp'),
-  path = require('path'),
-  browserSync = require('browser-sync').create(),
-  argv = require('minimist')(process.argv.slice(2)),
-  chalk = require('chalk');
+    path = require('path'),
+    browserSync = require('browser-sync').create(),
+    plumber = require('gulp-plumber'),
+    sourcemaps = require('gulp-sourcemaps'),
+    autoprefixer = require('gulp-autoprefixer'),
+    sass = require('gulp-sass'),
+    gutil = require('gulp-util'),
+    argv = require('minimist')(process.argv.slice(2)),
+    chalk = require('chalk');
+
+// gulp-plumber + gulp-util are used for proper error handling and formatting
+// see source : https://www.timroes.de/2015/01/06/proper-error-handling-in-gulp-js/
+const gulp_src = gulp.src;
+gulp.src = function () {
+  return gulp_src.apply(gulp, arguments)
+    .pipe(plumber(function (error) {
+      // Output an error message
+      gutil.log(gutil.colors.red('Error (' + error.plugin + '): ' + error.message));
+      // emit the end event, to properly end the task
+      this.emit('end');
+    }));
+};
+
+const autoprefixerOptions = {
+    browsers: ['> 1%', 'last 2 versions']
+};
 
 /**
  * Normalize all paths to be plain, paths with no leading './',
@@ -54,6 +76,18 @@ gulp.task('pl-copy:favicon', function () {
 gulp.task('pl-copy:font', function () {
   return gulp.src('*', {cwd: normalizePath(paths().source.fonts)})
     .pipe(gulp.dest(normalizePath(paths().public.fonts)));
+});
+
+// SASS Compilation
+gulp.task('pl-sass', function () {
+  return gulp.src(normalizePath(paths().source.scss) + '/style.scss')
+    .pipe(sourcemaps.init())
+    .pipe(sass({
+      sourceMap: 'map'
+    }))
+    .pipe(autoprefixer(autoprefixerOptions))
+    .pipe(sourcemaps.write())
+    .pipe(gulp.dest(normalizePath(paths().source.css)));
 });
 
 // CSS Copy
@@ -119,7 +153,9 @@ gulp.task('pl-assets', gulp.series(
   'pl-copy:img',
   'pl-copy:favicon',
   'pl-copy:font',
-  'pl-copy:css',
+  gulp.series('pl-sass', 'pl-copy:css', function (done) {
+    done();
+  }),
   'pl-copy:styleguide',
   'pl-copy:styleguide-css'
 ));
@@ -194,6 +230,12 @@ function watch() {
       paths: [normalizePath(paths().source.css, '**', '*.css')],
       config: { awaitWriteFinish: true },
       tasks: gulp.series('pl-copy:css', reloadCSS)
+    },
+    {
+      name: 'SCSS',
+      paths: [normalizePath(paths().source.scss, '**', '*.scss')],
+      config: { awaitWriteFinish: true },
+      tasks: gulp.series('pl-sass', reloadCSS)
     },
     {
       name: 'Styleguide Files',
